@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CENTIPEDE - 2026 Edition</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 3em;
+            text-shadow: 0 0 20px #00ff88;
+            letter-spacing: 3px;
+            color: #00ff88;
+        }
+
+        .game-wrapper {
+            position: relative;
+            border: 3px solid #00ff88;
+            box-shadow: 0 0 30px #00ff88, inset 0 0 30px rgba(0, 255, 136, 0.2);
+            background: #000;
+        }
+
+        canvas {
+            display: block;
+            background: #0a0a0a;
+        }
+
+        .hud {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            padding: 15px 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #00ff88;
+            font-size: 1.1em;
+            gap: 20px;
+        }
+
+        .hud-item {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .hud-label {
+            color: #00ff88;
+            font-weight: bold;
+        }
+
+        .hud-value {
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 2px;
+        }
+
+        .controls {
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border: 2px solid #00ff88;
+            border-radius: 5px;
+            max-width: 600px;
+        }
+
+        .controls h2 {
+            color: #00ff88;
+            margin-bottom: 10px;
+        }
+
+        .controls p {
+            margin: 5px 0;
+            opacity: 0.9;
+        }
+
+        .key {
+            background: #00ff88;
+            color: #000;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-weight: bold;
+            display: inline-block;
+            margin: 0 3px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #00ff88 0%, #00cc66 100%);
+            color: #000;
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1em;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-top: 15px;
+        }
+
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px #00ff88;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            padding: 40px;
+            border: 3px solid #ff0066;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 0 40px #ff0066;
+        }
+
+        .game-over.show {
+            display: block;
+        }
+
+        .game-over h2 {
+            font-size: 2.5em;
+            color: #ff0066;
+            margin-bottom: 20px;
+            text-shadow: 0 0 20px #ff0066;
+        }
+
+        .game-over p {
+            font-size: 1.3em;
+            margin: 10px 0;
+            color: #00ff88;
+        }
+
+        .stats {
+            margin-top: 20px;
+            padding: 20px;
+            background: rgba(0, 255, 136, 0.1);
+            border: 2px solid #00ff88;
+            border-radius: 5px;
+        }
+
+        .stats p {
+            margin: 10px 0;
+            font-size: 1.1em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 CENTIPEDE 2026</h1>
+        
+        <div class="game-wrapper">
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+            <div class="game-over" id="gameOver">
+                <h2>GAME OVER</h2>
+                <div class="stats">
+                    <p>PUNTEGGIO FINALE: <span id="finalScore">0</span></p>
+                    <p>VITE RIMASTE: <span id="finalLives">0</span></p>
+                    <p>CENTIPEDI ELIMINATI: <span id="finalCentipedes">0</span></p>
+                </div>
+                <button onclick="location.reload()">GIOCA DI NUOVO</button>
+            </div>
+        </div>
+
+        <div class="hud">
+            <div class="hud-item">
+                <span class="hud-label">PUNTEGGIO:</span>
+                <span class="hud-value" id="score">0</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">VITE:</span>
+                <span class="hud-value" id="lives">3</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">LIVELLO:</span>
+                <span class="hud-value" id="level">1</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">CENTIPEDI:</span>
+                <span class="hud-value" id="centipedes">0</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h2>🎮 CONTROLLI</h2>
+            <p><span class="key">A</span> <span class="key">D</span> oppure <span class="key">FRECCE</span> per muoversi</p>
+            <p><span class="key">SPACE</span> per sparare (oppure click/touch)</p>
+            <p><span class="key">P</span> per pausare il gioco</p>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
