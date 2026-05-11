@@ -281,17 +281,72 @@ class Game {
         this.gameOver = false;
         this.lastFrameTime = Date.now();
 
+        // Inizializzazione e caricamento suoni
+        this.audioInitialized = false;
+        this.sounds = {
+            sparo: new Audio('assets/sparo.wav'),
+            morte: new Audio('assets/morte.wav'),
+            cambioLivello: new Audio('assets/cambio livello.wav'),
+            punti: new Audio('assets/collecting points.wav'),
+            background: new Audio('assets/background sound.wav'),
+            snake: new Audio('assets/snake.wav')
+        };
+
+        // Configurazione loop e volumi audio
+        this.sounds.background.loop = true;
+        this.sounds.background.volume = 0.4; // Volume di sottofondo moderato
+        this.sounds.snake.loop = true;
+        this.sounds.snake.volume = 0.3;      // Volume del centipede moderato
+
         this.setupEventListeners();
         this.spawnLevel();
     }
 
+    // Inizializza l'audio dopo la prima interazione dell'utente (richiesto dai browser moderni)
+    initAudio() {
+        if (this.audioInitialized) return;
+        this.audioInitialized = true;
+        
+        // Avvia la musica di sottofondo
+        this.sounds.background.play().catch(e => console.log("Riproduzione audio bloccata:", e));
+        
+        // Avvia il suono del centipede se ce n'è uno attivo
+        if (this.centipedes.length > 0 && !this.paused && !this.gameOver) {
+            this.sounds.snake.play().catch(e => {});
+        }
+    }
+
+    // Funzione helper per riprodurre un effetto sonoro istantaneo (permette sovrapposizioni dello stesso suono)
+    playSound(soundKey) {
+        const sound = this.sounds[soundKey];
+        if (sound) {
+            // Clona il nodo audio per permettere di riprodurre lo stesso suono più volte in rapida successione
+            const soundClone = sound.cloneNode();
+            soundClone.volume = sound.volume;
+            soundClone.play().catch(e => console.log("Errore riproduzione effetto:", e));
+        }
+    }
+
     setupEventListeners() {
         window.addEventListener('keydown', (e) => {
+            // Inizializza l'audio al primo tasto premuto
+            this.initAudio();
+
             const key = e.key.toLowerCase();
             this.keys[key] = true;
 
             if (key === 'p') {
                 this.paused = !this.paused;
+                // Gestione audio in pausa
+                if (this.paused) {
+                    this.sounds.background.pause();
+                    this.sounds.snake.pause();
+                } else {
+                    if (this.audioInitialized) {
+                        this.sounds.background.play().catch(e => {});
+                        if (this.centipedes.length > 0) this.sounds.snake.play().catch(e => {});
+                    }
+                }
             }
 
             if (key === ' ') {
@@ -307,6 +362,7 @@ class Game {
 
         // Touch/click per sparare
         this.canvas.addEventListener('click', () => {
+            this.initAudio();
             this.playerFire();
         });
     }
@@ -328,6 +384,11 @@ class Game {
         const centipedeLength = 6 + this.level;
         const centipedeStart = Math.random() * (this.width - 100) + 50;
         this.centipedes.push(new Centipede(centipedeStart, 30, centipedeLength));
+
+        // Avvia il loop del suono snake se l'audio è già attivo
+        if (this.audioInitialized && !this.paused && !this.gameOver) {
+            this.sounds.snake.play().catch(e => {});
+        }
     }
 
     playerFire() {
@@ -336,6 +397,7 @@ class Game {
         const now = Date.now();
         if (this.player.canFire(now)) {
             this.bullets.push(new Bullet(this.player.pos.x, this.player.pos.y));
+            this.playSound('sparo'); // Suono dello sparo
         }
     }
 
@@ -354,9 +416,11 @@ class Game {
         // Aggiorna centipedi
         this.centipedes = this.centipedes.filter((c) => c.update(this.width, this.height, this.funghi));
 
-        // Controlla se il centipede ha raggiunto il fondo
+        // Controlla se il centipede ha raggiunto il fondo o è stato distrutto
         if (this.centipedes.length === 0) {
             this.level++;
+            this.sounds.snake.pause(); // Ferma il suono snake durante il cambio livello
+            this.playSound('cambioLivello'); // Suono di passaggio livello
             this.spawnLevel();
         }
 
@@ -378,6 +442,7 @@ class Game {
 
                 centipede.segments.splice(segmentIndex, 1);
                 this.score += 100;
+                this.playSound('punti'); // Suono quando si colpisce un segmento
 
                 // Se il centipede è completamente eliminato
                 if (centipede.segments.length === 0) {
@@ -389,6 +454,11 @@ class Game {
 
         // Rimuovi centipedi vuoti
         this.centipedes = this.centipedes.filter((c) => c.segments.length > 0);
+
+        // Se non ci sono più centipedi, interrompiamo temporaneamente il suono snake
+        if (this.centipedes.length === 0) {
+            this.sounds.snake.pause();
+        }
 
         // Controlla collisioni con il giocatore
         for (let centipede of this.centipedes) {
@@ -421,6 +491,8 @@ class Game {
 
     loseLife() {
         this.lives--;
+        this.playSound('morte'); // Suono della perdita di una vita / morte
+
         if (this.lives <= 0) {
             this.endGame();
         } else {
@@ -433,6 +505,9 @@ class Game {
 
     endGame() {
         this.gameOver = true;
+        this.sounds.background.pause(); // Ferma la musica di sottofondo
+        this.sounds.snake.pause();      // Ferma il sibilo del serpente
+        
         document.getElementById('gameOver').classList.add('show');
         document.getElementById('finalScore').textContent = this.score;
         document.getElementById('finalLives').textContent = this.lives;
