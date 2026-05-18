@@ -1,580 +1,333 @@
-// CENTIPEDE 2026 - Game Engine
-// Tecnologie moderne: ES6+, Canvas API, RequestAnimationFrame
-
-class Vector2 {
-    constructor(x = 0, y = 0) {
-        this.x = x;
-        this.y = y;
-    }
-
-    add(v) {
-        return new Vector2(this.x + v.x, this.y + v.y);
-    }
-
-    multiply(scalar) {
-        return new Vector2(this.x * scalar, this.y * scalar);
-    }
-
-    distance(v) {
-        const dx = this.x - v.x;
-        const dy = this.y - v.y;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    copy() {
-        return new Vector2(this.x, this.y);
-    }
-}
-
-class Player {
-    constructor(x, y) {
-        this.pos = new Vector2(x, y);
-        this.size = 15;
-        this.speed = 5;
-        this.vel = new Vector2(0, 0);
-        this.fireRate = 200; // ms
-        this.lastShot = 0;
-    }
-
-    update(keys, width, height) {
-        // Movimento basato su input
-        this.vel.x = 0;
-        if (keys['a'] || keys['ArrowLeft']) this.vel.x = -this.speed;
-        if (keys['d'] || keys['ArrowRight']) this.vel.x = this.speed;
-
-        // Aggiorna posizione
-        this.pos.x += this.vel.x;
-
-        // Vincoli ai bordi
-        this.pos.x = Math.max(this.size, Math.min(width - this.size, this.pos.x));
-    }
-
-    draw(ctx) {
-        // Giocatore - forma triangolare moderna
-        ctx.save();
-        ctx.fillStyle = '#00ff88';
-        ctx.shadowColor = '#00ff88';
-        ctx.shadowBlur = 10;
-
-        // Triangolo
-        ctx.beginPath();
-        ctx.moveTo(this.pos.x, this.pos.y - this.size);
-        ctx.lineTo(this.pos.x - this.size, this.pos.y + this.size);
-        ctx.lineTo(this.pos.x + this.size, this.pos.y + this.size);
-        ctx.closePath();
-        ctx.fill();
-
-        // Glow effect
-        ctx.strokeStyle = '#00ff88';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        ctx.restore();
-    }
-
-    canFire(now) {
-        if (now - this.lastShot > this.fireRate) {
-            this.lastShot = now;
-            return true;
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Pac-Man Custom - GitHub</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Press Start 2P', cursive;
         }
-        return false;
-    }
-}
-
-class Bullet {
-    constructor(x, y) {
-        this.pos = new Vector2(x, y);
-        this.vel = new Vector2(0, -10);
-        this.size = 4;
-        this.active = true;
-    }
-
-    update(height) {
-        this.pos = this.pos.add(this.vel);
-        if (this.pos.y < 0) {
-            this.active = false;
+        .info {
+            width: 400px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 12px;
+            color: #ffff00;
         }
-    }
+        canvas {
+            border: 4px solid #333;
+            box-shadow: 0 0 20px #222;
+        }
+        #ui-death {
+            position: absolute;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 25px;
+            border: 3px solid #f00;
+            z-index: 100;
+        }
+        button {
+            background: #f00;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            font-family: 'Press Start 2P', cursive;
+            cursor: pointer;
+            margin-top: 15px;
+            font-size: 10px;
+        }
+        button:hover { background: #b00; }
+    </style>
+</head>
+<body>
 
-    draw(ctx) {
-        ctx.save();
-        ctx.fillStyle = '#ffff00';
-        ctx.shadowColor = '#ffff00';
-        ctx.shadowBlur = 8;
-        ctx.beginPath();
-        ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-    }
+    <div class="info">
+        <div>LIVELLO: <span id="lvl">1</span></div>
+        <div>SCORE: <span id="score">0</span></div>
+    </div>
 
-    intersects(x, y, radius) {
-        return this.pos.distance(new Vector2(x, y)) < radius + this.size;
-    }
-}
+    <div id="ui-death">
+        <div style="color: #f00; margin-bottom: 10px;">CATTURATO!</div>
+        <button onclick="retryLevel()">RIPROVA LIVELLO</button>
+    </div>
 
-class CentipedeSegment {
-    constructor(x, y, currentLevel = 1) {
-        this.pos = new Vector2(x, y);
-        this.size = 12;
-        
-        // MODIFICA: La velocità aumenta linearmente del 15% ad ogni livello in modo continuo
-        const speedMultiplier = 1 + (currentLevel - 1) * 0.15;
-        this.vel = new Vector2(1 * speedMultiplier, 0);
-        
-        this.nextPos = this.pos.copy();
-        this.moveCounter = 0;
-        this.moveInterval = 1; // Esecuzione fissa ad ogni frame per fluidità massima
-    }
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
 
-    update(width, height, funghi) {
-        this.moveCounter++;
-        if (this.moveCounter >= this.moveInterval) {
-            this.moveCounter = 0;
-            this.nextPos = this.pos.add(this.vel);
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const TILE = 20;
 
-            // Controlla i bordi (tiene conto del moltiplicatore di velocità nel rimbalzo)
-            if (this.nextPos.x - this.size < 0 || this.nextPos.x + this.size > width) {
-                this.vel.x *= -1;
-                this.nextPos.y += 20;
-                this.nextPos.x = this.pos.x + (this.vel.x * 2);
-            }
+        let score = 0;
+        let currentLevel = 0;
+        let isPaused = false;
+        let isMusicPlaying = false; // Controlla se la musica è già stata avviata
 
-            // Controlla i bordi verticali
-            if (this.nextPos.y + this.size > height) {
-                return false; // Centipede ha raggiunto il fondo
-            }
+        // ============================================================================
+        // GESTORE AUDIO
+        // ============================================================================
+        const AudioManager = {
+            bgMusic: new Audio('assets/music game.mp3'),
+            soundDie: new Audio('assets/game die.mp3'),
+            soundRetry: new Audio('assets/retry botton.flac'),
+            soundEat: new Audio('assets/eat.wav'),
+            soundBip: new Audio('assets/bip.wav'),
 
-            // Controlla collisione con funghi
-            let hasCollision = false;
-            for (let fungo of funghi) {
-                if (this.pos.distance(fungo.pos) < this.size + fungo.size) {
-                    hasCollision = true;
-                    break;
+            init: function() {
+                this.bgMusic.loop = true;
+                this.bgMusic.volume = 0.4;
+            },
+
+            playMusic: function() {
+                if (!isMusicPlaying) {
+                    this.bgMusic.play()
+                        .then(() => { isMusicPlaying = true; })
+                        .catch(e => console.log("In attesa di interazione per l'audio"));
                 }
+            },
+
+            stopMusic: function() {
+                this.bgMusic.pause();
+                this.bgMusic.currentTime = 0;
+                isMusicPlaying = false;
+            },
+
+            playSFX: function(audioClip) {
+                audioClip.currentTime = 0;
+                audioClip.play().catch(e => console.log("Errore SFX:", e));
             }
-
-            if (!hasCollision) {
-                this.pos = this.nextPos.copy();
-            } else {
-                // Inverte la marcia se colpisce un fungo lateralmente
-                this.vel.x *= -1;
-                this.pos.y += 20;
-            }
-        }
-
-        return true;
-    }
-
-    draw(ctx) {
-        ctx.save();
-        ctx.fillStyle = '#ff6600';
-        ctx.shadowColor = '#ff6600';
-        ctx.shadowBlur = 8;
-        ctx.beginPath();
-        ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Occhio del centipede
-        ctx.fillStyle = '#000';
-        ctx.beginPath();
-        ctx.arc(this.pos.x - 4, this.pos.y - 4, 3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-    }
-}
-
-class Centipede {
-    constructor(startX, startY, length, currentLevel = 1) {
-        this.segments = [];
-        for (let i = 0; i < length; i++) {
-            this.segments.push(new CentipedeSegment(startX - i * 30, startY, currentLevel));
-        }
-    }
-
-    update(width, height, funghi) {
-        if (this.segments.length === 0) return true;
-
-        // Aggiorna dalla testa
-        if (!this.segments[0].update(width, height, funghi)) {
-            return false; // Il centipede ha raggiunto il fondo
-        }
-
-        // Aggiorna il resto del corpo (mantiene i segmenti uniti proporzionalmente alla velocità)
-        for (let i = 1; i < this.segments.length; i++) {
-            const prev = this.segments[i - 1];
-            const current = this.segments[i];
-            const dist = prev.pos.distance(current.pos);
-
-            if (dist > 25) {
-                const direction = new Vector2(
-                    prev.pos.x - current.pos.x,
-                    prev.pos.y - current.pos.y
-                );
-                const len = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
-                direction.x /= len;
-                direction.y /= len;
-
-                current.pos.x = prev.pos.x - direction.x * 25;
-                current.pos.y = prev.pos.y - direction.y * 25;
-            }
-        }
-
-        return true;
-    }
-
-    draw(ctx) {
-        for (let segment of this.segments) {
-            segment.draw(ctx);
-        }
-    }
-
-    getCollisions(bullets) {
-        const collisions = [];
-        for (let i = 0; i < this.segments.length; i++) {
-            for (let j = 0; j < bullets.length; j++) {
-                if (bullets[j].intersects(this.segments[i].pos.x, this.segments[i].pos.y, this.segments[i].size)) {
-                    collisions.push({ bulletIndex: j, segmentIndex: i });
-                }
-            }
-        }
-        return collisions;
-    }
-}
-
-class Fungo {
-    constructor(x, y) {
-        this.pos = new Vector2(x, y);
-        this.size = 10;
-        this.health = 1;
-    }
-
-    draw(ctx) {
-        ctx.save();
-        ctx.fillStyle = `rgba(150, 100, 255, ${this.health * 0.7 + 0.3})`;
-        ctx.shadowColor = '#9664ff';
-        ctx.shadowBlur = 6;
-
-        // Disegna il fungo a forma circolare
-        for (let i = 0; i < 4; i++) {
-            const angle = (Math.PI * 2 * i) / 4;
-            const x = this.pos.x + Math.cos(angle) * this.size;
-            const y = this.pos.y + Math.sin(angle) * this.size;
-            ctx.beginPath();
-            ctx.arc(x, y, this.size * 0.6, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        ctx.restore();
-    }
-}
-
-class Game {
-    constructor(canvas) {
-        this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
-        this.width = canvas.width;
-        this.height = canvas.height;
-
-        this.player = new Player(this.width / 2, this.height - 40);
-        this.bullets = [];
-        this.centipedes = [];
-        this.funghi = [];
-        this.explosions = [];
-
-        this.score = 0;
-        this.lives = 3;
-        this.level = 1;
-        this.centipedesEliminated = 0;
-        this.paused = false;
-
-        this.keys = {};
-        this.gameOver = false;
-        this.lastFrameTime = Date.now();
-
-        // Inizializzazione e caricamento suoni
-        this.audioInitialized = false;
-        this.sounds = {
-            sparo: new Audio('assets/sparo.wav'),
-            morte: new Audio('assets/morte.wav'),
-            cambioLivello: new Audio('assets/cambio livello.wav'),
-            punti: new Audio('assets/collecting points.wav'),
-            background: new Audio('assets/background sound.wav'),
-            snake: new Audio('assets/snake.wav')
         };
 
-        // Configurazione loop e volumi audio
-        this.sounds.background.loop = true;
-        this.sounds.background.volume = 0.4; 
-        this.sounds.snake.loop = true;
-        this.sounds.snake.volume = 0.3;      
+        // Inizializza l'audio
+        AudioManager.init();
 
-        this.setupEventListeners();
-        this.spawnLevel();
-    }
+        // --- DATABASE DELLE MAPPE ---
+        const MAPS = [
+            // Livello 1: Semplice e aperto
+            [
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,1,0,1],
+                [1,0,1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,0,1],
+                [1,0,1,0,1,1,1,1,0,1,1,0,1,1,1,1,0,1,0,1],
+                [1,0,0,0,0,0,0,0,0,2,2,0,0,0,0,0,0,0,0,1],
+                [1,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+            ],
+            // Livello 2: Più corridoi
+            [
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,1],
+                [1,0,1,1,1,0,1,0,1,1,1,1,0,1,0,1,1,1,0,1],
+                [1,0,0,0,1,0,0,0,0,2,2,0,0,0,0,1,0,0,0,1],
+                [1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,1,1,1,0,1,1,1,0,0,1,1,1,0,1,1,1,0,1],
+                [1,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+            ]
+        ];
 
-    initAudio() {
-        if (this.audioInitialized) return;
-        this.audioInitialized = true;
-        this.sounds.background.play().catch(e => console.log("Riproduzione audio bloccata:", e));
-        if (this.centipedes.length > 0 && !this.paused && !this.gameOver) {
-            this.sounds.snake.play().catch(e => {});
+        let grid = [];
+        let pacman, ghosts;
+
+        function initLevel() {
+            const mapIdx = currentLevel % MAPS.length;
+            grid = MAPS[mapIdx].map(row => [...row]);
+            
+            pacman = {
+                x: 1, y: 1,
+                dx: 0, dy: 0,
+                nextDx: 0, nextDy: 0,
+                angle: 0,
+                mouth: 0
+            };
+
+            // Fantasmi iniziali (più lenti all'inizio)
+            ghosts = [
+                { x: 9, y: 5, dx: 1, dy: 0, color: 'red', speedCounter: 0 },
+                { x: 10, y: 5, dx: -1, dy: 0, color: 'pink', speedCounter: 0 }
+            ];
+
+            // Aggiungi un fantasma extra dal livello 2
+            if(currentLevel >= 1) {
+                ghosts.push({ x: 9, y: 3, dx: 0, dy: 1, color: 'cyan', speedCounter: 0 });
+            }
+
+            document.getElementById('lvl').innerText = currentLevel + 1;
+            document.getElementById('ui-death').style.display = 'none';
+            isPaused = false;
         }
-    }
 
-    playSound(soundKey) {
-        const sound = this.sounds[soundKey];
-        if (sound) {
-            const soundClone = sound.cloneNode();
-            soundClone.volume = sound.volume;
-            soundClone.play().catch(e => console.log("Errore riproduzione effetto:", e));
-        }
-    }
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    setupEventListeners() {
-        window.addEventListener('keydown', (e) => {
-            this.initAudio();
-            const key = e.key.toLowerCase();
-            this.keys[key] = true;
-
-            if (key === 'p') {
-                this.paused = !this.paused;
-                if (this.paused) {
-                    this.sounds.background.pause();
-                    this.sounds.snake.pause();
-                } else {
-                    if (this.audioInitialized) {
-                        this.sounds.background.play().catch(e => {});
-                        if (this.centipedes.length > 0) this.sounds.snake.play().catch(e => {});
+            // Disegna Mappa
+            for(let y=0; y<grid.length; y++){
+                for(let x=0; x<grid[y].length; x++){
+                    if(grid[y][x] === 1) {
+                        ctx.fillStyle = '#1a1a1a';
+                        ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
+                        ctx.strokeStyle = '#33f';
+                        ctx.strokeRect(x*TILE+2, y*TILE+2, TILE-4, TILE-4);
+                    } else if(grid[y][x] === 0) {
+                        ctx.fillStyle = '#ffb8ae';
+                        ctx.beginPath();
+                        ctx.arc(x*TILE + 10, y*TILE + 10, 2, 0, Math.PI*2);
+                        ctx.fill();
                     }
                 }
             }
 
-            if (key === ' ') {
-                e.preventDefault();
-                this.playerFire();
+            // Disegna Pacman con Rotazione Bocca
+            pacman.mouth += 0.25;
+            let open = Math.abs(Math.sin(pacman.mouth)) * 0.2;
+
+            ctx.save();
+            ctx.translate(pacman.x*TILE + 10, pacman.y*TILE + 10);
+            ctx.rotate(pacman.angle);
+            ctx.fillStyle = 'yellow';
+            ctx.beginPath();
+            ctx.moveTo(0,0);
+            ctx.arc(0, 0, 9, open * Math.PI, (2 - open) * Math.PI);
+            ctx.fill();
+            ctx.restore();
+
+            // Disegna Fantasmi
+            ghosts.forEach(g => {
+                ctx.fillStyle = g.color;
+                ctx.beginPath();
+                ctx.arc(g.x*TILE + 10, g.y*TILE + 10, 8, Math.PI, 0);
+                ctx.lineTo(g.x*TILE + 18, g.y*TILE + 18);
+                ctx.lineTo(g.x*TILE + 2, g.y*TILE + 18);
+                ctx.fill();
+            });
+        }
+
+        function update() {
+            if(isPaused) return;
+
+            // Movimento Pacman
+            if (grid[pacman.y + pacman.nextDy][pacman.x + pacman.nextDx] !== 1) {
+                pacman.dx = pacman.nextDx;
+                pacman.dy = pacman.nextDy;
+                
+                // Rotazione in base alla direzione
+                if(pacman.dx === 1) pacman.angle = 0;
+                if(pacman.dx === -1) pacman.angle = Math.PI;
+                if(pacman.dy === 1) pacman.angle = Math.PI/2;
+                if(pacman.dy === -1) pacman.angle = -Math.PI/2;
             }
-        });
 
-        window.addEventListener('keyup', (e) => {
-            const key = e.key.toLowerCase();
-            this.keys[key] = false;
-        });
-
-        this.canvas.addEventListener('click', () => {
-            this.initAudio();
-            this.playerFire();
-        });
-    }
-
-    spawnLevel() {
-        this.centipedes = [];
-        this.funghi = [];
-        this.bullets = [];
-        this.explosions = [];
-
-        for (let i = 0; i < 8 + this.level * 2; i++) {
-            const x = Math.random() * (this.width - 40) + 20;
-            const y = Math.random() * (this.height - 200) + 100;
-            this.funghi.push(new Fungo(x, y));
-        }
-
-        const centipedeLength = 6 + this.level;
-        const centipedeStart = Math.random() * (this.width - 100) + 50;
-        this.centipedes.push(new Centipede(centipedeStart, 30, centipedeLength, this.level));
-
-        if (this.audioInitialized && !this.paused && !this.gameOver) {
-            this.sounds.snake.play().catch(e => {});
-        }
-    }
-
-    playerFire() {
-        if (this.gameOver || this.paused) return;
-
-        const now = Date.now();
-        if (this.player.canFire(now)) {
-            this.bullets.push(new Bullet(this.player.pos.x, this.player.pos.y));
-            this.playSound('sparo');
-        }
-    }
-
-    update() {
-        if (this.paused || this.gameOver) return;
-
-        this.player.update(this.keys, this.width, this.height);
-
-        this.bullets = this.bullets.filter((b) => {
-            b.update(this.height);
-            for (let fungo of this.funghi) {
-                if (b.pos.distance(fungo.pos) < b.size + fungo.size) {
-                    b.active = false; 
-                    break;
-                }
+            if (grid[pacman.y + pacman.dy][pacman.x + pacman.dx] !== 1) {
+                pacman.x += pacman.dx;
+                pacman.y += pacman.dy;
             }
-            return b.active;
+
+            // Mangia puntini
+            if(grid[pacman.y][pacman.x] === 0) {
+                grid[pacman.y][pacman.x] = 2;
+                score += 10;
+                document.getElementById('score').innerText = score;
+                
+                // 🔊 Eat quando mangia i pallini
+                AudioManager.playSFX(AudioManager.soundEat);
+            }
+
+            // Vittoria Livello
+            let dots = 0;
+            grid.forEach(row => row.forEach(c => { if(c === 0) dots++; }));
+            if(dots === 0) {
+                currentLevel++;
+                initLevel();
+            }
+
+            // Movimento Fantasmi (Rallentati)
+            ghosts.forEach(g => {
+                g.speedCounter++;
+                let speedDelay = Math.max(2, 4 - currentLevel); 
+                
+                if(g.speedCounter >= speedDelay) {
+                    g.speedCounter = 0;
+                    
+                    let dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
+                    if(grid[g.y + g.dy][g.x + g.dx] === 1 || Math.random() < 0.3) {
+                        let valid = dirs.filter(d => grid[g.y + d.y][g.x + d.x] !== 1);
+                        
+                        let chanceToChase = currentLevel < 2 ? 0.2 : 0.7;
+
+                        if(Math.random() < chanceToChase) {
+                            valid.sort((a,b) => {
+                                return Math.hypot(g.x+a.x - pacman.x, g.y+a.y - pacman.y) - 
+                                       Math.hypot(g.x+b.x - pacman.x, g.y+b.y - pacman.y);
+                            });
+                        }
+                        
+                        let move = valid[0]; 
+                        if(Math.random() > 0.8) move = valid[Math.floor(Math.random()*valid.length)];
+
+                        if(move) { g.dx = move.x; g.dy = move.y; }
+                    }
+                    g.x += g.dx;
+                    g.y += g.dy;
+                }
+
+                // Collisione (Morte)
+                if(g.x === pacman.x && g.y === pacman.y) {
+                    isPaused = true;
+                    
+                    // 🔊 Ferma la musica principale e riproduce "game die" quando muore
+                    AudioManager.stopMusic();
+                    AudioManager.playSFX(AudioManager.soundDie);
+
+                    // Mostra l'interfaccia "CATTURATO"
+                    document.getElementById('ui-death').style.display = 'flex';
+                    
+                    // 🔊 Retry botton quando esce la scritta "catturato"
+                    AudioManager.playSFX(AudioManager.soundRetry);
+                }
+            });
+        }
+
+        function retryLevel() {
+            initLevel();
+            // Fa ripartire la musica quando si riprova il livello
+            AudioManager.playMusic();
+        }
+
+        window.addEventListener('keydown', e => {
+            // Sblocca e avvia la musica di sottofondo alla prima pressione di un tasto di movimento
+            AudioManager.playMusic();
+
+            if(e.key === 'ArrowUp')    { pacman.nextDx = 0; pacman.nextDy = -1; AudioManager.playSFX(AudioManager.soundBip); }
+            if(e.key === 'ArrowDown')  { pacman.nextDx = 0; pacman.nextDy = 1;  AudioManager.playSFX(AudioManager.soundBip); }
+            if(e.key === 'ArrowLeft')  { pacman.nextDx = -1; pacman.nextDy = 0; AudioManager.playSFX(AudioManager.soundBip); }
+            if(e.key === 'ArrowRight') { pacman.nextDx = 1; pacman.nextDy = 0;  AudioManager.playSFX(AudioManager.soundBip); }
         });
 
-        this.centipedes = this.centipedes.filter((c) => c.update(this.width, this.height, this.funghi));
-
-        if (this.centipedes.length === 0) {
-            this.level++;
-            this.sounds.snake.pause(); 
-            this.playSound('cambioLivello'); 
-            this.spawnLevel();
+        function gameLoop() {
+            update();
+            draw();
+            setTimeout(() => {
+                requestAnimationFrame(gameLoop);
+            }, 120);
         }
 
-        for (let centipede of this.centipedes) {
-            const collisions = centipede.getCollisions(this.bullets);
-
-            for (let collision of collisions) {
-                const { bulletIndex, segmentIndex } = collision;
-
-                if (bulletIndex < this.bullets.length) {
-                    this.bullets.splice(bulletIndex, 1);
-                }
-
-                const segment = centipede.segments[segmentIndex];
-                this.createExplosion(segment.pos.x, segment.pos.y);
-
-                centipede.segments.splice(segmentIndex, 1);
-                this.score += 100;
-                this.playSound('punti'); 
-
-                if (centipede.segments.length === 0) {
-                    this.centipedesEliminated++;
-                    this.score += 500;
-                }
-            }
-        }
-
-        this.centipedes = this.centipedes.filter((c) => c.segments.length > 0);
-
-        if (this.centipedes.length === 0) {
-            this.sounds.snake.pause();
-        }
-
-        for (let centipede of this.centipedes) {
-            for (let segment of centipede.segments) {
-                if (this.player.pos.distance(segment.pos) < this.player.size + segment.size) {
-                    this.loseLife();
-                    return;
-                }
-            }
-        }
-
-        this.explosions = this.explosions.filter(e => e.life > 0);
-        for (let exp of this.explosions) {
-            exp.life--;
-        }
-
-        this.updateHUD();
-    }
-
-    createExplosion(x, y) {
-        this.explosions.push({
-            pos: new Vector2(x, y),
-            life: 10,
-            maxLife: 10,
-            radius: 20
-        });
-    }
-
-    loseLife() {
-        this.lives--;
-        this.playSound('morte'); 
-
-        if (this.lives <= 0) {
-            this.endGame();
-        } else {
-            this.player.pos.x = this.width / 2;
-            this.player.pos.y = this.height - 40;
-            this.bullets = [];
-        }
-    }
-
-    endGame() {
-        this.gameOver = true;
-        this.sounds.background.pause(); 
-        this.sounds.snake.pause();      
-        
-        document.getElementById('gameOver').classList.add('show');
-        document.getElementById('finalScore').textContent = this.score;
-        document.getElementById('finalLives').textContent = this.lives;
-        document.getElementById('finalCentipedes').textContent = this.centipedesEliminated;
-    }
-
-    updateHUD() {
-        document.getElementById('score').textContent = this.score;
-        document.getElementById('lives').textContent = Math.max(0, this.lives);
-        document.getElementById('level').textContent = this.level;
-        document.getElementById('centipedes').textContent = this.centipedesEliminated;
-    }
-
-    draw() {
-        this.ctx.fillStyle = '#0a0a0a';
-        this.ctx.fillRect(0, 0, this.width, this.height);
-
-        this.ctx.strokeStyle = 'rgba(0, 255, 136, 0.05)';
-        this.ctx.lineWidth = 1;
-        for (let i = 0; i < this.width; i += 50) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(i, 0);
-            this.ctx.lineTo(i, this.height);
-            this.ctx.stroke();
-        }
-        for (let i = 0; i < this.height; i += 50) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, i);
-            this.ctx.lineTo(this.width, i);
-            this.ctx.stroke();
-        }
-
-        for (let fungo of this.funghi) {
-            fungo.draw(this.ctx);
-        }
-
-        for (let centipede of this.centipedes) {
-            centipede.draw(this.ctx);
-        }
-
-        for (let bullet of this.bullets) {
-            bullet.draw(this.ctx);
-        }
-
-        this.player.draw(this.ctx);
-
-        for (let exp of this.explosions) {
-            const alpha = exp.life / exp.maxLife;
-            this.ctx.save();
-            this.ctx.globalAlpha = alpha;
-            this.ctx.fillStyle = '#ff6600';
-            this.ctx.shadowColor = '#ff6600';
-            this.ctx.shadowBlur = 15;
-            this.ctx.beginPath();
-            this.ctx.arc(exp.pos.x, exp.pos.y, exp.radius, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.restore();
-        }
-
-        if (this.paused) {
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.fillRect(0, 0, this.width, this.height);
-            this.ctx.fillStyle = '#00ff88';
-            this.ctx.font = 'bold 48px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.shadow = '0 0 20px #00ff88';
-            this.ctx.fillText('PAUSA', this.width / 2, this.height / 2);
-        }
-    }
-
-    gameLoop() {
-        this.update();
-        this.draw();
-        requestAnimationFrame(() => this.gameLoop());
-    }
-}
-
-window.addEventListener('DOMContentLoaded', () => {
-    const canvas = document.getElementById('gameCanvas');
-    const game = new Game(canvas);
-    game.gameLoop();
-});
+        initLevel();
+        gameLoop();
+    </script>
+</body>
+</html>
