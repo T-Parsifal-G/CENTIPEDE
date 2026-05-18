@@ -116,12 +116,14 @@ class CentipedeSegment {
     constructor(x, y, currentLevel = 1) {
         this.pos = new Vector2(x, y);
         this.size = 12;
-        this.vel = new Vector2(1, 0);
+        
+        // MODIFICA: La velocità aumenta linearmente del 15% ad ogni livello in modo continuo
+        const speedMultiplier = 1 + (currentLevel - 1) * 0.15;
+        this.vel = new Vector2(1 * speedMultiplier, 0);
+        
         this.nextPos = this.pos.copy();
         this.moveCounter = 0;
-        
-        // MODIFICA: Il serpente accelera ad ogni livello (riducendo i frame di attesa fino a un minimo di 1)
-        this.moveInterval = Math.max(1, 2 - (currentLevel - 1) * 0.2);
+        this.moveInterval = 1; // Esecuzione fissa ad ogni frame per fluidità massima
     }
 
     update(width, height, funghi) {
@@ -130,11 +132,11 @@ class CentipedeSegment {
             this.moveCounter = 0;
             this.nextPos = this.pos.add(this.vel);
 
-            // Controlla i bordi
+            // Controlla i bordi (tiene conto del moltiplicatore di velocità nel rimbalzo)
             if (this.nextPos.x - this.size < 0 || this.nextPos.x + this.size > width) {
                 this.vel.x *= -1;
                 this.nextPos.y += 20;
-                this.nextPos.x = this.pos.x + (this.vel.x * 20);
+                this.nextPos.x = this.pos.x + (this.vel.x * 2);
             }
 
             // Controlla i bordi verticali
@@ -153,6 +155,10 @@ class CentipedeSegment {
 
             if (!hasCollision) {
                 this.pos = this.nextPos.copy();
+            } else {
+                // Inverte la marcia se colpisce un fungo lateralmente
+                this.vel.x *= -1;
+                this.pos.y += 20;
             }
         }
 
@@ -193,7 +199,7 @@ class Centipede {
             return false; // Il centipede ha raggiunto il fondo
         }
 
-        // Aggiorna il resto del corpo
+        // Aggiorna il resto del corpo (mantiene i segmenti uniti proporzionalmente alla velocità)
         for (let i = 1; i < this.segments.length; i++) {
             const prev = this.segments[i - 1];
             const current = this.segments[i];
@@ -298,33 +304,26 @@ class Game {
 
         // Configurazione loop e volumi audio
         this.sounds.background.loop = true;
-        this.sounds.background.volume = 0.4; // Volume di sottofondo moderato
+        this.sounds.background.volume = 0.4; 
         this.sounds.snake.loop = true;
-        this.sounds.snake.volume = 0.3;      // Volume del centipede moderato
+        this.sounds.snake.volume = 0.3;      
 
         this.setupEventListeners();
         this.spawnLevel();
     }
 
-    // Inizializza l'audio dopo la prima interazione dell'utente (richiesto dai browser moderni)
     initAudio() {
         if (this.audioInitialized) return;
         this.audioInitialized = true;
-        
-        // Avvia la musica di sottofondo
         this.sounds.background.play().catch(e => console.log("Riproduzione audio bloccata:", e));
-        
-        // Avvia il suono del centipede se ce n'è uno attivo
         if (this.centipedes.length > 0 && !this.paused && !this.gameOver) {
             this.sounds.snake.play().catch(e => {});
         }
     }
 
-    // Funzione helper per riprodurre un effetto sonoro istantaneo (permette sovrapposizioni dello stesso suono)
     playSound(soundKey) {
         const sound = this.sounds[soundKey];
         if (sound) {
-            // Clona il nodo audio per permettere di riprodurre lo stesso suono più volte in rapida successione
             const soundClone = sound.cloneNode();
             soundClone.volume = sound.volume;
             soundClone.play().catch(e => console.log("Errore riproduzione effetto:", e));
@@ -333,15 +332,12 @@ class Game {
 
     setupEventListeners() {
         window.addEventListener('keydown', (e) => {
-            // Inizializza l'audio al primo tasto premuto
             this.initAudio();
-
             const key = e.key.toLowerCase();
             this.keys[key] = true;
 
             if (key === 'p') {
                 this.paused = !this.paused;
-                // Gestione audio in pausa
                 if (this.paused) {
                     this.sounds.background.pause();
                     this.sounds.snake.pause();
@@ -364,7 +360,6 @@ class Game {
             this.keys[key] = false;
         });
 
-        // Touch/click per sparare
         this.canvas.addEventListener('click', () => {
             this.initAudio();
             this.playerFire();
@@ -377,19 +372,16 @@ class Game {
         this.bullets = [];
         this.explosions = [];
 
-        // Crea funghi casuali
         for (let i = 0; i < 8 + this.level * 2; i++) {
             const x = Math.random() * (this.width - 40) + 20;
             const y = Math.random() * (this.height - 200) + 100;
             this.funghi.push(new Fungo(x, y));
         }
 
-        // MODIFICA: Il centipede diventa progressivamente più lungo in base al livello
         const centipedeLength = 6 + this.level;
         const centipedeStart = Math.random() * (this.width - 100) + 50;
         this.centipedes.push(new Centipede(centipedeStart, 30, centipedeLength, this.level));
 
-        // Avvia il loop del suono snake se l'audio è già attivo
         if (this.audioInitialized && !this.paused && !this.gameOver) {
             this.sounds.snake.play().catch(e => {});
         }
@@ -401,62 +393,52 @@ class Game {
         const now = Date.now();
         if (this.player.canFire(now)) {
             this.bullets.push(new Bullet(this.player.pos.x, this.player.pos.y));
-            this.playSound('sparo'); // Suono dello sparo
+            this.playSound('sparo');
         }
     }
 
     update() {
         if (this.paused || this.gameOver) return;
 
-        // Aggiorna giocatore
         this.player.update(this.keys, this.width, this.height);
 
-        // MODIFICA: Aggiorna proiettili e controlla se impattano contro i funghi (ostacolo)
         this.bullets = this.bullets.filter((b) => {
             b.update(this.height);
-            
-            // Verifica collisione proiettile -> fungo
             for (let fungo of this.funghi) {
                 if (b.pos.distance(fungo.pos) < b.size + fungo.size) {
-                    b.active = false; // Il proiettile si ferma/distrugge sul fungo
+                    b.active = false; 
                     break;
                 }
             }
             return b.active;
         });
 
-        // Aggiorna centipedi
         this.centipedes = this.centipedes.filter((c) => c.update(this.width, this.height, this.funghi));
 
-        // Controlla se il centipede ha raggiunto il fondo o è stato distrutto
         if (this.centipedes.length === 0) {
             this.level++;
-            this.sounds.snake.pause(); // Ferma il suono snake durante il cambio livello
-            this.playSound('cambioLivello'); // Suono di passaggio livello
+            this.sounds.snake.pause(); 
+            this.playSound('cambioLivello'); 
             this.spawnLevel();
         }
 
-        // Controlla collisioni con centipedi
         for (let centipede of this.centipedes) {
             const collisions = centipede.getCollisions(this.bullets);
 
             for (let collision of collisions) {
                 const { bulletIndex, segmentIndex } = collision;
 
-                // Rimuovi proiettile e segmento
                 if (bulletIndex < this.bullets.length) {
                     this.bullets.splice(bulletIndex, 1);
                 }
 
-                // Rimuovi segmento e crea goccia
                 const segment = centipede.segments[segmentIndex];
                 this.createExplosion(segment.pos.x, segment.pos.y);
 
                 centipede.segments.splice(segmentIndex, 1);
                 this.score += 100;
-                this.playSound('punti'); // Suono quando si colpisce un segmento
+                this.playSound('punti'); 
 
-                // Se il centipede è completamente eliminato
                 if (centipede.segments.length === 0) {
                     this.centipedesEliminated++;
                     this.score += 500;
@@ -464,15 +446,12 @@ class Game {
             }
         }
 
-        // Rimuovi centipedi vuoti
         this.centipedes = this.centipedes.filter((c) => c.segments.length > 0);
 
-        // Se non ci sono più centipedi, interrompiamo temporaneamente il suono snake
         if (this.centipedes.length === 0) {
             this.sounds.snake.pause();
         }
 
-        // Controlla collisioni con il giocatore
         for (let centipede of this.centipedes) {
             for (let segment of centipede.segments) {
                 if (this.player.pos.distance(segment.pos) < this.player.size + segment.size) {
@@ -482,13 +461,11 @@ class Game {
             }
         }
 
-        // Aggiorna esplosioni
         this.explosions = this.explosions.filter(e => e.life > 0);
         for (let exp of this.explosions) {
             exp.life--;
         }
 
-        // Aggiorna HUD
         this.updateHUD();
     }
 
@@ -503,12 +480,11 @@ class Game {
 
     loseLife() {
         this.lives--;
-        this.playSound('morte'); // Suono della perdita di una vita / morte
+        this.playSound('morte'); 
 
         if (this.lives <= 0) {
             this.endGame();
         } else {
-            // Reset della posizione del giocatore
             this.player.pos.x = this.width / 2;
             this.player.pos.y = this.height - 40;
             this.bullets = [];
@@ -517,8 +493,8 @@ class Game {
 
     endGame() {
         this.gameOver = true;
-        this.sounds.background.pause(); // Ferma la musica di sottofondo
-        this.sounds.snake.pause();      // Ferma il sibilo del serpente
+        this.sounds.background.pause(); 
+        this.sounds.snake.pause();      
         
         document.getElementById('gameOver').classList.add('show');
         document.getElementById('finalScore').textContent = this.score;
@@ -534,11 +510,9 @@ class Game {
     }
 
     draw() {
-        // Sfondo con griglia
         this.ctx.fillStyle = '#0a0a0a';
         this.ctx.fillRect(0, 0, this.width, this.height);
 
-        // Griglia sfumata
         this.ctx.strokeStyle = 'rgba(0, 255, 136, 0.05)';
         this.ctx.lineWidth = 1;
         for (let i = 0; i < this.width; i += 50) {
@@ -554,7 +528,6 @@ class Game {
             this.ctx.stroke();
         }
 
-        // Disegna elementi di gioco
         for (let fungo of this.funghi) {
             fungo.draw(this.ctx);
         }
@@ -569,7 +542,6 @@ class Game {
 
         this.player.draw(this.ctx);
 
-        // Disegna esplosioni
         for (let exp of this.explosions) {
             const alpha = exp.life / exp.maxLife;
             this.ctx.save();
@@ -583,7 +555,6 @@ class Game {
             this.ctx.restore();
         }
 
-        // Disegna testo pausa
         if (this.paused) {
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
             this.ctx.fillRect(0, 0, this.width, this.height);
@@ -602,7 +573,6 @@ class Game {
     }
 }
 
-// Avvia il gioco
 window.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas');
     const game = new Game(canvas);
