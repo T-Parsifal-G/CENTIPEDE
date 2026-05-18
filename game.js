@@ -113,13 +113,15 @@ class Bullet {
 }
 
 class CentipedeSegment {
-    constructor(x, y) {
+    constructor(x, y, currentLevel = 1) {
         this.pos = new Vector2(x, y);
         this.size = 12;
         this.vel = new Vector2(1, 0);
         this.nextPos = this.pos.copy();
         this.moveCounter = 0;
-        this.moveInterval = 2;
+        
+        // MODIFICA: Il serpente accelera ad ogni livello (riducendo i frame di attesa fino a un minimo di 1)
+        this.moveInterval = Math.max(1, 2 - (currentLevel - 1) * 0.2);
     }
 
     update(width, height, funghi) {
@@ -176,14 +178,16 @@ class CentipedeSegment {
 }
 
 class Centipede {
-    constructor(startX, startY, length) {
+    constructor(startX, startY, length, currentLevel = 1) {
         this.segments = [];
         for (let i = 0; i < length; i++) {
-            this.segments.push(new CentipedeSegment(startX - i * 30, startY));
+            this.segments.push(new CentipedeSegment(startX - i * 30, startY, currentLevel));
         }
     }
 
     update(width, height, funghi) {
+        if (this.segments.length === 0) return true;
+
         // Aggiorna dalla testa
         if (!this.segments[0].update(width, height, funghi)) {
             return false; // Il centipede ha raggiunto il fondo
@@ -380,10 +384,10 @@ class Game {
             this.funghi.push(new Fungo(x, y));
         }
 
-        // Crea centipede(s)
+        // MODIFICA: Il centipede diventa progressivamente più lungo in base al livello
         const centipedeLength = 6 + this.level;
         const centipedeStart = Math.random() * (this.width - 100) + 50;
-        this.centipedes.push(new Centipede(centipedeStart, 30, centipedeLength));
+        this.centipedes.push(new Centipede(centipedeStart, 30, centipedeLength, this.level));
 
         // Avvia il loop del suono snake se l'audio è già attivo
         if (this.audioInitialized && !this.paused && !this.gameOver) {
@@ -407,9 +411,17 @@ class Game {
         // Aggiorna giocatore
         this.player.update(this.keys, this.width, this.height);
 
-        // Aggiorna proiettili
+        // MODIFICA: Aggiorna proiettili e controlla se impattano contro i funghi (ostacolo)
         this.bullets = this.bullets.filter((b) => {
             b.update(this.height);
+            
+            // Verifica collisione proiettile -> fungo
+            for (let fungo of this.funghi) {
+                if (b.pos.distance(fungo.pos) < b.size + fungo.size) {
+                    b.active = false; // Il proiettile si ferma/distrugge sul fungo
+                    break;
+                }
+            }
             return b.active;
         });
 
